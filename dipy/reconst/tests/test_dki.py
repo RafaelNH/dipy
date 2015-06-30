@@ -10,6 +10,8 @@ from dipy.sims.voxel import multi_tensor_dki
 
 import dipy.reconst.dki as dki
 
+from dipy.reconst.dki import (mean_kurtosis, carlson_rf,  carlson_rd)
+
 from dipy.io.gradients import read_bvals_bvecs
 
 from dipy.core.gradients import gradient_table
@@ -129,3 +131,172 @@ def test_dki_predict():
     # just to check that it works with more than one voxel:
     pred_multi = dkiM.predict(multi_params, S0=100)
     assert_array_almost_equal(pred_multi, DWI)
+
+
+def test_mk(): 
+    dkiM = dki.DiffusionKurtosisModel(gtab_2s)
+    dkiF = dkiM.fit(signal_cross)
+
+    # MK analytical solution
+    MK_as = dkiF.mk
+
+    # MK numerical method
+    sph = Sphere(xyz=gtab.bvecs[gtab.bvals > 0])
+    MK_nm = mean_kurtosis(dkiF.model_params, sph)
+
+    assert_array_almost_equal(MK_as, MK_nm, decimal=1)
+
+
+def test_carlson_rf():
+    
+    # Define inputs that we know the outputs from:
+    # Carlson, B.C., 1994. Numerical computation of real or complex
+    # elliptic integrals. arXiv:math/9409227 [math.CA]
+    
+    # Real values
+    x = np.array([1.0, 0.5, 2.0])
+    y = np.array([2.0, 1.0, 3.0])
+    z = np.array([0.0, 0.0, 4.0])
+    
+    # Defene reference outputs
+    RF_ref = np.array([1.3110287771461, 1.8540746773014, 0.58408284167715])
+    
+    # Compute integrals
+    RF =  carlson_rf(x, y, z)
+
+    # Compare
+    assert_array_almost_equal(RF, RF_ref)
+    
+    # Complex values
+    x = np.array([1j, 1j - 1, 1j, 1j - 1])
+    y = np.array([-1j, 1j, -1j, 1j])
+    z = np.array([0.0, 0.0, 2, 1 - 1j])
+    
+    # Defene reference outputs
+    RF_ref = np.array([1.8540746773014, 0.79612586584234 - 1.2138566698365j,
+                       1.0441445654064, 0.93912050218619 - 0.53296252018635j])
+    # Compute integrals
+    RF =  carlson_rf(x, y, z, errtol=3e-5)
+
+    # Compare
+    assert_array_almost_equal(RF, RF_ref)
+
+
+def test_carlson_rd():
+    
+    # Define inputs that we know the outputs from:
+    # Carlson, B.C., 1994. Numerical computation of real or complex
+    # elliptic integrals. arXiv:math/9409227 [math.CA]
+    
+    # Real values
+    x = np.array([0.0, 2.0])
+    y = np.array([2.0, 3.0])
+    z = np.array([1.0, 4.0])
+    
+    # Defene reference outputs
+    RD_ref = np.array([1.7972103521034, 0.16510527294261])
+    
+    # Compute integrals
+    RD =  carlson_rd(x, y, z, errtol=1e-5)
+
+    # Compare
+    assert_array_almost_equal(RD, RD_ref)
+    
+    # Complex values
+    x = np.array([1j, 0.0, 0.0, -2 - 1j])
+    y = np.array([-1j, 1j, 1j-1, -1j])
+    z = np.array([2.0, -1j, 1j, -1 + 1j])
+    
+    # Defene reference outputs
+    RD_ref = np.array([0.65933854154220, 1.2708196271910 + 2.7811120159521j,
+                       -1.8577235439239 - 0.96193450888839j, 
+                       1.8249027393704 - 1.2218475784827j])
+    # Compute integrals
+    RD =  carlson_rd(x, y, z, errtol=1e-5)
+
+    # Compare
+    assert_array_almost_equal(RD, RD_ref)
+
+
+def wls_fit_dki(design_matrix, data, min_signal=1):
+    r"""
+    Adaption of the WLS fit implemented by Maurizio with faster all voxel
+    lopping, with new output format (all important KT elements saved).
+    """
+
+    tol = 1e-6
+    if min_signal <= 0:
+        raise ValueError('min_signal must be > 0')
+
+    data = np.asarray(data)
+    data_flat = data.reshape((-1, data.shape[-1]))
+    # dki_params = np.empty((len(data_flat), 6, 3))
+    # new line:
+    dki_params = np.empty((len(data_flat), 27))
+    min_diffusivity = tol / -design_matrix.min()
+
+    ols_fit = _ols_fit_matrix(design_matrix)
+
+    # for param, sig in zip(dki_params, data_flat):
+    #     param[0], param[1:4], param[4], param[5] = _wls_iter(ols_fit,
+    #     design_matrix, sig, min_signal, min_diffusivity)
+    # new line:
+    for vox in range(len(data_flat)):
+        dki_params[vox] = _wls_iter(ols_fit, design_matrix, data_flat[vox],
+                                    min_signal, min_diffusivity)
+
+    # dki_params.shape=data.shape[:-1]+(18,)
+    # dki_params=dki_params
+    return dki_params
+
+
+def _ols_fit_matrix(design_matrix):
+    """
+    (implemented by Maurizio)
+    Helper function to calculate the ordinary least squares (OLS)
+    fit as a matrix multiplication. Mainly used to calculate WLS weights. Can
+    be used to calculate regression coefficients in OLS but not recommended.
+
+    See Also:
+    ---------
+    wls_fit_tensor, ols_fit_tensor
+
+    Example:
+    --------
+    ols_fit = _ols_fit_matrix(design_mat)
+    ols_data = np.dot(ols_fit, data)
+    """
+
+    U, S, V = np.linalg.svd(design_matrix, False)
+    return np.dot(U, U.T)
+
+
+def _wls_iter(ols_fit, design_matrix, sig, min_signal, min_diffusivity):
+    ''' Helper function used by wls_fit_tensor.
+    '''
+    sig = np.maximum(sig, min_signal)  # throw out zero signals
+    log_s = np.log(sig)
+    w = np.exp(np.dot(ols_fit, log_s))
+    result = np.dot(np.linalg.pinv(design_matrix * w[:, None]), w * log_s)
+    D = result[:6]
+    # tensor=from_lower_triangular(D)
+    # new line
+    evals, evecs = decompose_tensor(from_lower_triangular(D),
+                                    min_diffusivity=min_diffusivity)
+
+    # MeanD_square=((tensor[0,0]+tensor[1,1]+tensor[2,2])/3.)**2
+    # new_line:
+    MeanD_square = (evals.mean(0))**2
+    K_tensor_elements = result[6:21] / MeanD_square
+
+    # new line:
+    dki_params = np.concatenate((evals, evecs[0], evecs[1], evecs[2],
+                                 K_tensor_elements), axis=0)
+
+    out_shape = sig.shape[:-1] + (-1, )
+    dki_params = dki_params.reshape(out_shape)
+
+    # return decompose_tensors(tensor, K_tensor_elements,
+    #                          min_diffusivity=min_diffusivity)
+    # line line:
+    return dki_params
