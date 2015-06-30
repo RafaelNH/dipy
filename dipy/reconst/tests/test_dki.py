@@ -15,7 +15,7 @@ import dipy.reconst.dti as dti
 
 import dipy.reconst.dki as dki
 
-from dipy.reconst.dki import (mean_kurtosis, carlson_rf,  split_dki_param)
+from dipy.reconst.dki import (mean_kurtosis, carlson_rf,  carlson_rd)
 
 from dipy.io.gradients import read_bvals_bvecs
 
@@ -354,6 +354,42 @@ def test_carlson_rf():
 
     # Compare
     assert_array_almost_equal(RF, RF_ref)
+
+
+def test_carlson_rd():
+    
+    # Define inputs that we know the outputs from:
+    # Carlson, B.C., 1994. Numerical computation of real or complex
+    # elliptic integrals. arXiv:math/9409227 [math.CA]
+    
+    # Real values
+    x = np.array([0.0, 2.0])
+    y = np.array([2.0, 3.0])
+    z = np.array([1.0, 4.0])
+    
+    # Defene reference outputs
+    RD_ref = np.array([1.7972103521034, 0.16510527294261])
+    
+    # Compute integrals
+    RD =  carlson_rd(x, y, z, errtol=1e-5)
+
+    # Compare
+    assert_array_almost_equal(RD, RD_ref)
+    
+    # Complex values
+    x = np.array([1j, 0.0, 0.0, -2 - 1j])
+    y = np.array([-1j, 1j, 1j-1, -1j])
+    z = np.array([2.0, -1j, 1j, -1 + 1j])
+    
+    # Defene reference outputs
+    RD_ref = np.array([0.65933854154220, 1.2708196271910 + 2.7811120159521j,
+                       -1.8577235439239 - 0.96193450888839j, 
+                       1.8249027393704 - 1.2218475784827j])
+    # Compute integrals
+    RD =  carlson_rd(x, y, z, errtol=1e-5)
+
+    # Compare
+    assert_array_almost_equal(RD, RD_ref)
 
 
 def wls_fit_dki(design_matrix, data, min_signal=1):

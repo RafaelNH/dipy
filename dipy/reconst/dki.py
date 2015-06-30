@@ -34,7 +34,7 @@ def carlson_rf(x, y, z, errtol=3e-4):
     .. math::
         R_F = \frac{1}{2} \int_{0}^{\infty} \left [(t+x)(t+y)(t+z)  \right ]
         ^{-\frac{1}{2}}dt
-        
+
     Parameters
     ----------
     x : ndarray (n,)
@@ -46,7 +46,7 @@ def carlson_rf(x, y, z, errtol=3e-4):
     errtol : float
         Error tolerance. Integral is computed with relative error less in
         magnitude than the defined value
-    
+
     Returns
     -------
     RF : ndarray (n,)
@@ -61,13 +61,8 @@ def carlson_rf(x, y, z, errtol=3e-4):
     .. [1] Carlson, B.C., 1994. Numerical computation of real or complex
            elliptic integrals. arXiv:math/9409227 [math.CA]
     """
-    if errtol==None:
-        # Compute errtol from system epslon
-        epslon = np.finfo(x[0]).eps
-        errtol = (epslon / 3.0) ** (1.0/6.0)
-
     # Initialize RF
-    RF = np.zeros(len(x), dtype=complex)
+    RF = np.zeros(len(x), dtype=x.dtype)
 
     # Convergence has to be done voxel by voxel
     for v in range(len(x)):
@@ -87,7 +82,7 @@ def carlson_rf(x, y, z, errtol=3e-4):
             xn = (xn + lamda)*0.250
             yn = (yn + lamda)*0.250
             zn = (zn + lamda)*0.250
-            An = (xn + yn + zn) / 3.0
+            An = (An + lamda)*0.250
             n = n + 1
 
         # post convergence calculation
@@ -101,7 +96,7 @@ def carlson_rf(x, y, z, errtol=3e-4):
     return RF
 
 
-def carlson_rd(x, y, z):
+def carlson_rd(x, y, z, errtol=1e-4):
     r""" Computes the Carlson's incomplete elliptic integral of the second kind
     defined as:
 
@@ -117,7 +112,10 @@ def carlson_rd(x, y, z):
         Second independent variable of the integral.
     z : ndarray (n,)
         Third independent variable of the integral.
-    
+    errtol : float
+        Error tolerance. Integral is computed with relative error less in
+        magnitude than the defined value
+
     Returns
     -------
     RD : ndarray (n,)
@@ -127,58 +125,46 @@ def carlson_rd(x, y, z):
     -----
     x, y, and z have to be nonnegative and at most x or y is zero.
     """
-    d1mach=np.zeros(5)
-    d1mach[0]=1.1*10**(-308)
-    d1mach[1]=8.9e307
-    d1mach[2]=0.22204460*10**(-15)
-    d1mach[3]=0.4440*10**(-15)
-    d1mach[4]=np.log(2.0)
-    errtol = (d1mach[2]/3.0)**(1.0/6.0) 
-    lolim  = 2.0/(d1mach[1])**(2.0/3.0)
-    tuplim = d1mach[0]**(1.0/3.0)
-    tuplim = (0.10*errtol)**(1.0/3.0)/tuplim
-    uplim  = tuplim**2.0
-    c1 = 3.0/14.0
-    c2 = 1.0/6.0
-    c3 = 9.0/22.0
-    c4 = 3.0/26.0
+    # Initialize RD
+    RD = np.zeros(len(x), dtype=x.dtype)
 
-    xn = x.copy()
-    yn = y.copy()
-    zn = z.copy()
-    sigma = 0.0
-    power4 = 1.0
+    # Convergence has to be done voxel by voxel
+    for v in range(len(x)):
+        n = 0
+        xn = x[v]
+        yn = y[v]
+        zn = z[v]
+        A0 = (xn + yn + 3.*zn) / 5.0
+        An = A0.copy()
+        Q = (errtol/4.) ** (-1/6.) * np.max([np.abs(An - xn), np.abs(An - yn),
+                                             np.abs(An - zn)])
+        sum_term = 0
+        # Convergence condition
+        while 4.**(-n) * Q > abs(An):          
+            xnroot = np.sqrt(xn)
+            ynroot = np.sqrt(yn)
+            znroot = np.sqrt(zn)
+            lamda = xnroot*(ynroot + znroot) + ynroot*znroot
+            sum_term = sum_term + 4.**(-n) / (znroot * (zn + lamda))
+            n = n + 1
+            xn = (xn + lamda)*0.250
+            yn = (yn + lamda)*0.250
+            zn = (zn + lamda)*0.250
+            An = (An + lamda)*0.250
 
-    mu = (xn+yn+3.0*zn)*0.20
-    xndev = (mu-xn)/mu
-    yndev = (mu-yn)/mu
-    zndev = (mu-zn)/mu
-    epslon = np.max([np.abs(xndev), np.abs(yndev), np.abs(zndev)])
-    while (epslon >= errtol):
-       xnroot = np.sqrt(xn)
-       ynroot = np.sqrt(yn)
-       znroot = np.sqrt(zn)
-       lamda = xnroot*(ynroot+znroot) + ynroot*znroot
-       sigma = sigma + power4/(znroot*(zn+lamda))
-       power4 = power4*0.250
-       xn = (xn+lamda)*0.250
-       yn = (yn+lamda)*0.250
-       zn = (zn+lamda)*0.250
-       mu = (xn+yn+3.0*zn)*0.20
-       xndev = (mu-xn)/mu
-       yndev = (mu-yn)/mu
-       zndev = (mu-zn)/mu
-       epslon = np.max([np.abs(xndev), np.abs(yndev), np.abs(zndev)])
+        # post convergence calculation
+        X = (A0 - x[v]) / (4.**(n) * An)
+        Y = (A0 - y[v]) / (4.**(n) * An)
+        Z = - (X+Y) / 3.
+        E2 = X*Y - 6.*Z*Z
+        E3 = (3.*X*Y - 8.*Z*Z) * Z
+        E4 = 3.* (X*Y - Z*Z) * Z**2.
+        E5 = X * Y * Z**3.
+        RD[v] = \
+            4**(-n) * An**(-3/2.) * (1 - 3/14.*E2 + 1/6.*E3 + 9/88.*(E2**2) - \
+            3/22.*E4 - 9/52.*E2*E3 + 3/26.*E5) + 3*sum_term
 
-    ea = xndev*yndev
-    eb = zndev*zndev
-    ec = ea - eb
-    ed = ea - 6.0*eb
-    ef = ed + ec + ec
-    s1 = ed*(-c1+0.250*c3*ed-1.50*c4*zndev*ef)
-    s2 = zndev*(c2*ef+zndev*(-c3*ec+zndev*c4*ea))
-    drd = 3.0*sigma + power4*(1.0+s1+s2)/(mu*np.sqrt(mu))
-    return drd
+    return RD
 
 
 def C2222(a,b,c):
