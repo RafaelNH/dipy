@@ -168,47 +168,6 @@ def carlson_rd(x, y, z, errtol=1e-4):
     return RD
 
 
-def C2222(a,b,c):
-    """
-    WIP
-    """
-    Carray=np.zeros(a.shape)
-    abc= np.array((a, b, c))
-    indexesxcond1=np.logical_and.reduce(abc>0)
-    if np.sum(indexesxcond1)!=0:
-      Carray[indexesxcond1]=((a[indexesxcond1]+2.*b[indexesxcond1])**2/(24.*b[indexesxcond1]**2))
-    
-    indexesxcond2=np.logical_and(np.logical_and.reduce(abc>0),(b!=c))
-    if np.sum(indexesxcond2)!=0:
-      Carray[indexesxcond2]=(((a[indexesxcond2]+b[indexesxcond2]+c[indexesxcond2])**2/((18.)*(b[indexesxcond2])*(b[indexesxcond2]-c[indexesxcond2])**2))*(2.*b[indexesxcond2]+((c[indexesxcond2]**2-3.*b[indexesxcond2]*c[indexesxcond2])/(np.sqrt(b[indexesxcond2]*c[indexesxcond2])))))
-
-    ### the following condition has to be checked ###
-    indexesxcond3=np.logical_or.reduce(abc<=0)
-    Carray[indexesxcond3]=0   
-    return Carray  
-
-
-def C2233(a,b,c):
-    """
-    WIP
-    """
-    Carray=np.zeros(a.shape)
-    abc= np.array((a, b, c))
-    
-    indexesxcond1=np.logical_and.reduce(abc>0)
-    if np.sum(indexesxcond1)!=0:
-      Carray[indexesxcond1]=((a[indexesxcond1]+2.*b[indexesxcond1])**2/(12.*b[indexesxcond1]**2))
-      
-    indexesxcond2=np.logical_and(np.logical_and.reduce(abc>0),(b!=c))
-    if np.sum(indexesxcond2)!=0:
-      Carray[indexesxcond2]=(((a[indexesxcond2]+b[indexesxcond2]+c[indexesxcond2])**2/((3.)*(b[indexesxcond2]-c[indexesxcond2])**2))*(((b[indexesxcond2]+c[indexesxcond2])/(np.sqrt(b[indexesxcond2]*c[indexesxcond2])))-2.))
-
-  ### the following condition has to be checked ###
-    indexesxcond3=np.logical_or.reduce(abc<=0)
-    Carray[indexesxcond3]=0   
-    return Carray  
-
-
 def _F1m(a, b, c):
     """ Helper function that computes function $F_1$ which is required to
     compute the analytical solution of the Mean kurtosis.
@@ -391,18 +350,139 @@ def _F2m(a, b, c):
     return F2
 
 
-def G1m(a,b,c):
+def _G1m(a, b, c):
+    """ Helper function that computes function $G_1$ which is required to
+    compute the analytical solution of the Axial kurtosis.
+    
+    Parameters
+    ----------
+    a : ndarray (n,)
+        Array containing the values of parameter $\lambda_1$ of function $G_1$ 
+    b : ndarray (n,)
+        Array containing the values of parameter $\lambda_2$ of function $G_1$
+    c : ndarray (n,)
+        Array containing the values of parameter $\lambda_3$ of function $G_1$
+        
+    Returns
+    -------
+    G1 : ndarray (n,)
+       Value of the function $G_1$ for all elements of the arrays a, b, and c
+
+    Notes
+    --------
+    Function $G_1$ is defined as [1]_:
+
+    .. math::
+
+        G_1(\lambda_1,\lambda_2,\lambda_3)=
+        \frac{(\lambda_1+\lambda_2+\lambda_3)^2}{18\lambda_2(\lambda_2-
+        \lambda_3)} \left (2\lambda_2 +
+        \frac{\lambda_3^2-3\lambda_2\lambda_3}{\sqrt{\lambda_2\lambda_3}}
+        \right)
+
+    References
+    ----------
+    .. [1] Tabesh, A., Jensen, J.H., Ardekani, B.A., Helpern, J.A., 2011.
+           Estimation of tensors and tensor-derived measures in diffusional
+           kurtosis imaging. Magn Reson Med. 65(3), 823-836
     """
-    WIP
-    """
-    return C2222(a,b,c)
+    # Float error used to compare two floats, abs(l1 - l2) < er for l1 = l2 
+    er = np.finfo(a[0]).eps * 1e3  # Error defined three order of magnitude of 
+                                   # system's epslon
+    # Initialize G1
+    G1 = np.empty(a.shape)
+
+    # NaN for non plausible diffusion values, i.e. a <= 0 or b <= 0 or c <= 0
+    abc = np.array((a, b, c))    
+    cond0 = np.logical_and.reduce(abc<=0)
+    if np.sum(cond0)!=0:
+        G1[cond0] = float('nan')
+
+    # Apply formula for non problematic plaussible cases, i.e. b!=c
+    cond1=np.logical_and(~cond0, (abs(b - c) > er))
+    if np.sum(cond1)!=0:
+        L1 = a[cond1]
+        L2 = b[cond1]
+        L3 = c[cond1]
+        G1[cond1] = \
+            (L1+L2+L3)**2 / (18 * L2 * (L2-L3)**2) * \
+            (2.*L2 + (L3**2 - 3*L2*L3) / np.sqrt(L2*L3))
+
+    # Resolve possible sigularity b==c
+    cond2 = np.logical_and(~cond0, np.logical_and(abs(b - c) < er,
+                                                  abs(a - b) > er))
+    if np.sum(cond2)!=0:
+        L1 = a[cond2]
+        L2 = b[cond2]
+        G1[cond2] = (L1 + 2.*L2)**2 / (24.*L2**2)
+
+    return G1
 
 
-def G2m(a,b,c):
+def _G2m(a,b,c):
+    """ Helper function that computes function $G_2$ which is required to
+    compute the analytical solution of the Axial kurtosis.
+    
+    Parameters
+    ----------
+    a : ndarray (n,)
+        Array containing the values of parameter $\lambda_1$ of function $G_2$ 
+    b : ndarray (n,)
+        Array containing the values of parameter $\lambda_2$ of function $G_2$
+    c : ndarray (n,)
+        Array containing the values of parameter $\lambda_3$ of function $G_2$
+        
+    Returns
+    -------
+    G2 : ndarray (n,)
+       Value of the function $G_2$ for all elements of the arrays a, b, and c
+
+    Notes
+    --------
+    Function $G_2$ is defined as [1]_:
+
+    .. math::
+
+        G_2(\lambda_1,\lambda_2,\lambda_3)=
+        \frac{(\lambda_1+\lambda_2+\lambda_3)^2}{(\lambda_2-\lambda_3)^2}
+        \left ( \frac{\lambda_2+\lambda_3}{\sqrt{\lambda_2\lambda_3}}-2\right )
+
+    References
+    ----------
+    .. [1] Tabesh, A., Jensen, J.H., Ardekani, B.A., Helpern, J.A., 2011.
+           Estimation of tensors and tensor-derived measures in diffusional
+           kurtosis imaging. Magn Reson Med. 65(3), 823-836
     """
-    WIP
-    """
-    return 6*C2233(a,b,c)
+    # Float error used to compare two floats, abs(l1 - l2) < er for l1 = l2 
+    er = np.finfo(a[0]).eps * 1e3  # Error defined three order of magnitude of 
+                                   # system's epslon
+    # Initialize G1
+    G2 = np.empty(a.shape)
+
+    # NaN for non plausible diffusion values, i.e. a <= 0 or b <= 0 or c <= 0
+    abc = np.array((a, b, c))    
+    cond0 = np.logical_and.reduce(abc<=0)
+    if np.sum(cond0)!=0:
+        G2[cond0] = float('nan')
+
+    # Apply formula for non problematic plaussible cases, i.e. b!=c
+    cond1=np.logical_and(~cond0, (abs(b - c) > er))
+    if np.sum(cond1)!=0:
+        L1 = a[cond1]
+        L2 = b[cond1]
+        L3 = c[cond1]
+        G2[cond1] = \
+            (L1+L2+L3)**2 / (3 * (L2-L3)**2) * ((L2+L3) / np.sqrt(L2*L3) - 2)
+
+    # Resolve possible sigularity b==c
+    cond2=np.logical_and(~cond0, np.logical_and(abs(b - c) < er,
+                                                abs(a - b) > er))
+    if np.sum(cond2)!=0:
+        L1 = a[cond2]
+        L2 = b[cond2]
+        G2[cond2] = (L1 + 2.*L2)**2 / (12.*L2**2)
+
+    return G2
 
 
 def mean_kurtosis(dki_params, sphere=None):
@@ -598,56 +678,60 @@ def _mk_analytical_solution(dki_params):
     return MeanKurt
 
 
-def axial_kurtosis(evals, Wrotat, axis=-1):
-    r"""
-    (WIP)    
-    
-    Axial Kurtosis (AK) of a diffusion kurtosis tensor. 
+def axial_kurtosis(dki_params):
+    r"""  Computes axial Kurtosis (AK) from the kurtosis tensor. 
 
     Parameters
     ----------
-    evals : array-like
-        Eigenvalues of a diffusion tensor.
-    Wrotat : array-like
-        W tensor elements of interest for the evaluation of the Kurtosis 
-        (W_xxxx,W_yyyy,W_zzzz,W_xxyy,W_xxzz,W_yyzz)
-    axis : int
-        Axis of `evals` which contains 3 eigenvalues.
+    dki_params : ndarray (x, y, z, 27) or (n, 27)
+        All parameters estimated from the diffusion kurtosis model.
+        Parameters are ordered as follow:
+            1) Three diffusion tensor's eingenvalues
+            2) Three lines of the eigenvector matrix each containing the first,
+               second and third coordinates of the eigenvector
+            3) Fifteen elements of the kurtosis tensor
 
     Returns
     -------
     ak : array
         Calculated AK.
-
-    Notes
-    --------
-    AK is calculated with the following equation:
-
-    .. math::
-
-     K_{||}=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{9\lambda_1^2}
-     \hat{W}_{1111}
-
     """
-    [W_xxxx,W_yyyy,W_zzzz,W_xxyy,W_xxzz,W_yyzz]=[Wrotat[...,0],Wrotat[...,1],Wrotat[...,1],Wrotat[...,3],Wrotat[...,4],Wrotat[...,5]]
-    AxialKurt=((evals[...,0]+evals[...,1]+evals[...,2])**2/(9*(evals[...,0])**2))*W_xxxx
-    return AxialKurt
+    # Flat parameters
+    outshape = dki_params.shape[:-1]
+    dki_params = dki_params.reshape((-1, dki_params.shape[-1]))
+
+    # Split data
+    evals, evecs, kt = split_dki_param(dki_params)
+
+    # Compute MD
+    MD = mean_diffusivity(evals)
+
+    # Initialize AK
+    AK = np.zeros(kt.shape[-1])
+
+    # loop over all voxels
+    for vox in range(len(kt)):
+        R = evecs[vox]
+        dt = lower_triangular(np.dot(np.dot(R, np.diag(evals[vox])), R.T))
+        AK[vox] = _directional_kurtosis(dt, MD[vox], kt[vox], R[:, 1])
+
+    AK = AK.reshape(outshape)
+
+    return AK
 
 
-def radial_kurtosis(evals, Wrotat, axis=-1):
-    r"""
-    (WIP)
-    
-    Radial Kurtosis (RK) of a diffusion kurtosis tensor. 
+def radial_kurtosis(dki_params):
+    r""" Radial Kurtosis (RK) of a diffusion kurtosis tensor. 
 
     Parameters
     ----------
-    evals : array-like
-        Eigenvalues of a diffusion tensor.
-    Wrotat : array-like
-        W tensor elements of interest for the evaluation of the Kurtosis (W_xxxx,W_yyyy,W_zzzz,W_xxyy,W_xxzz,W_yyzz)
-    axis : int
-        Axis of `evals` which contains 3 eigenvalues.
+    dki_params : ndarray (x, y, z, 27) or (n, 27)
+        All parameters estimated from the diffusion kurtosis model.
+        Parameters are ordered as follow:
+            1) Three diffusion tensor's eingenvalues
+            2) Three lines of the eigenvector matrix each containing the first,
+               second and third coordinates of the eigenvector
+            3) Fifteen elements of the kurtosis tensor
 
     Returns
     -------
@@ -660,24 +744,59 @@ def radial_kurtosis(evals, Wrotat, axis=-1):
 
     .. math::
 
-
-    K_{r}=G_1(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2222}+G_1(\lambda_1,\lambda_3,\lambda_2)\hat{W}_{333}+G_2(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2233}
+        K_{\bot} = G_1(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2222} +
+                   G_1(\lambda_1,\lambda_3,\lambda_2)\hat{W}_{3333} +
+                   G_2(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2233}
 
     where:
-    \begin{equation}
-    G_1(\lambda_1,\lambda_2,\lambda_3)=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{18\lambda_2(\lambda_2-\lambda_3)}[2\lambda_2+\frac{\lambda_3^2-3\lambda_2 \lambda_3}{\sqrt{\lambda_2\lambda_3}}]
-    \end{equation}
 
-    \begin{equation}
-    G_2(\lambda_1,\lambda_2,\lambda_3)=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{(\lambda_2-\lambda_3)^2}[\frac{\lambda_2+\lambda_3}{\sqrt{\lambda_2\lambda_3}}-2]
-    \end{equation}
+    .. math::
 
+        G_1(\lambda_1,\lambda_2,\lambda_3)=
+        \frac{(\lambda_1+\lambda_2+\lambda_3)^2}{18\lambda_2(\lambda_2-
+        \lambda_3)} \left (2\lambda_2 +
+        \frac{\lambda_3^2-3\lambda_2\lambda_3}{\sqrt{\lambda_2\lambda_3}}
+        \right)
+  
+    and
+
+    .. math::
+
+        G_2(\lambda_1,\lambda_2,\lambda_3)=
+        \frac{(\lambda_1+\lambda_2+\lambda_3)^2}{(\lambda_2-\lambda_3)^2}
+        \left ( \frac{\lambda_2+\lambda_3}{\sqrt{\lambda_2\lambda_3}}-2\right )
 
     """
-    [W_xxxx,W_yyyy,W_zzzz,W_xxyy,W_xxzz,W_yyzz]=[Wrotat[...,0],Wrotat[...,1],Wrotat[...,1],Wrotat[...,3],Wrotat[...,4],Wrotat[...,5]]
+    # Flat parameters
+    outshape = dki_params.shape[:-1]
+    dki_params = dki_params.reshape((-1, dki_params.shape[-1]))
 
-    RadKurt=G1m(evals[...,0],evals[...,1],evals[...,2])*W_yyyy+G1m(evals[...,0],evals[...,2],evals[...,1])*W_zzzz+G2m(evals[...,0],evals[...,1],evals[...,2])*W_yyzz     
-    return RadKurt
+    # Split the model parameters to three variable containing the evals, evecs,
+    # and kurtosis elements
+
+    evals, evecs, kt = split_dki_param(dki_params)
+
+    # Rotate the kurtosis tensor from the standard Cartesian coordinate system
+    # to another coordinate system in which the 3 orthonormal eigenvectors of
+    # DT are the base coordinate
+    Wyyyy = np.zeros((len(kt)))
+    Wzzzz = np.zeros((len(kt)))
+    Wyyzz = np.zeros((len(kt)))
+
+    for vox in range(len(kt)): 
+        Wyyyy[vox] = Wrotate(kt[vox], evecs[vox], [1, 1, 1, 1])
+        Wzzzz[vox] = Wrotate(kt[vox], evecs[vox], [2, 2, 2, 2])
+        Wyyzz[vox] = Wrotate(kt[vox], evecs[vox], [1, 1, 2, 2])
+
+    # Compute MK
+    RK = \
+        _G1m(evals[...,0], evals[...,1], evals[...,2]) * Wyyyy + \
+        _G1m(evals[...,0], evals[...,2], evals[...,1]) * Wzzzz + \
+        _G2m(evals[...,0], evals[...,1], evals[...,2]) * Wyyzz     
+
+    RK = RK.reshape(outshape)
+
+    return RK
 
 
 def apparent_kurtosis_coef(dki_params, sphere, min_diffusivity=0,
@@ -1016,6 +1135,78 @@ class DiffusionKurtosisFit(TensorFit):
         Returns the 15 independent elements of the kurtosis tensor as an array
         """
         return self.model_params[..., 12:]
+
+    def mk(self):
+        """
+        Returns
+        -------
+        mk : array
+            Calculated MK.
+
+        Notes
+        --------
+        MK is computed as the average of the directional kurtosis of all the
+        directions of the gradient_table gtab [1]_:
+
+        References
+        ----------
+        .. [1] Hui ES, Cheung MM, Qi L, Wu EX, 2008. Towards better MR
+               characterization of neural tissues using directional diffusion
+               kurtosis analysis. Neuroimage 42(1): 122-34.
+        """
+        return mean_kurtosis(self.model_params, sphere)
+
+    @auto_attr
+    def ak(self, evals, Wrotat, axis=-1):
+        r"""
+        Axial Kurtosis (AK) of a diffusion kurtosis tensor. 
+
+        Returns
+        -------
+        ak : array
+            Calculated AK.
+
+        """
+        return axial_kurtosis(self.model_params)
+
+    @auto_attr
+    def rk(self, evals, Wrotat, axis=-1):
+        r"""
+        (WIP)
+        Radial Kurtosis (RK) of a diffusion kurtosis tensor. 
+
+        Parameters
+        ----------
+        evals : array-like
+            Eigenvalues of a diffusion tensor.
+        Wrotat : array-like
+            W tensor elements of interest for the evaluation of the Kurtosis (W_xxxx,W_yyyy,W_zzzz,W_xxyy,W_xxzz,W_yyzz)
+        axis : int
+            Axis of `evals` which contains 3 eigenvalues.
+
+        Returns
+        -------
+        rk : array
+            Calculated RK.
+
+        Notes
+        --------
+        RK is calculated with the following equation:
+
+        .. math::
+
+        K_{r}=G_1(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2222}+G_1(\lambda_1,\lambda_3,\lambda_2)\hat{W}_{333}+G_2(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2233}
+
+        where:
+        \begin{equation}
+        G_1(\lambda_1,\lambda_2,\lambda_3)=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{18\lambda_2(\lambda_2-\lambda_3)}[2\lambda_2+\frac{\lambda_3^2-3\lambda_2 \lambda_3}{\sqrt{\lambda_2\lambda_3}}]
+        \end{equation}
+
+        \begin{equation}
+        G_2(\lambda_1,\lambda_2,\lambda_3)=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{(\lambda_2-\lambda_3)^2}[\frac{\lambda_2+\lambda_3}{\sqrt{\lambda_2\lambda_3}}-2]
+        \end{equation}
+
+        """
 
     def akc(self, sphere):
         r""" Calculate the apparent kurtosis coefficient (AKC) in each
