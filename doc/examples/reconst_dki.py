@@ -131,6 +131,15 @@ maskdata, mask = median_otsu(selected_data, 3, 1, True,
                              vol_idx=range(10, 50), dilate=2)
 
 """
+Since DKI involves the estimation of a large number of parameters, we also
+smooth the data to decrease the impacts of image noise
+"""
+
+from scipy.ndimage.filters import gaussian_filter
+
+filtdata = gaussian_filter(maskdata, 0.53083)
+
+"""
 Now that we have prepared the datasets we can go forward with the voxel
 reconstruction. This can be done by first instantiate the DiffusinKurtosisModel
 in the following way.
@@ -143,7 +152,7 @@ Fitting the data is very simple. We just need to call the fit method of the
 DiffusinKurtosisModel in the following way:
 """
 
-dkifit = dkimodel.fit(maskdata)
+dkifit = dkimodel.fit(filtdata)
 
 """
 The fit method creates a DiffusionKurtosisFit object which contains all the
@@ -238,7 +247,34 @@ bias) [Veraa2011]_.
 The standard kurtosis statistics can be computed from the DiffusinKurtosisFit
 instance as the mean kurtosis (MK), the axial kurtosis (AD) and the radial
 kurtosis (RK).
+"""
 
+#sph = Sphere(xyz=gtab_for_dti.bvecs[gtab_for_dti.bvals>0])
+
+#from dipy.reconst.dki import mean_kurtosis
+
+#MK = mean_kurtosis(dkifit.model_params, sphere=sph)
+
+MK = dkifit.mk
+RK = dkifit.rk
+AK = dkifit.ak
+
+fig3, ax = plt.subplots(1, 3, figsize=(12, 6),
+                        subplot_kw={'xticks': [], 'yticks': []})
+
+fig3.subplots_adjust(hspace=0.3, wspace=0.05)
+
+ax.flat[0].imshow(MK[:, :, axial_middle], cmap='gray')
+ax.flat[0].set_title('MK')
+ax.flat[1].imshow(RK[:, :, axial_middle], cmap='gray')
+ax.flat[1].set_title('RK')
+ax.flat[2].imshow(AK[:, :, axial_middle], cmap='gray')
+ax.flat[2].set_title('AK')
+
+plt.show()
+fig3.savefig('Kurtosis_tensor_standard_measures.png')
+
+"""
 References:
 
 .. [Jensen2005] Jensen JH, Helpern JA, Ramani A, Lu H, Kaczynski K (2005).

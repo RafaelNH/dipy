@@ -1,5 +1,6 @@
 #!/usr/bin/python
 """ Classes and functions for fitting the diffusion kurtosis model """
+
 from __future__ import division, print_function, absolute_import
 
 import warnings
@@ -409,8 +410,7 @@ def _G1m(a, b, c):
             (2.*L2 + (L3**2 - 3*L2*L3) / np.sqrt(L2*L3))
 
     # Resolve possible sigularity b==c
-    cond2 = np.logical_and(~cond0, np.logical_and(abs(b - c) < er,
-                                                  abs(a - b) > er))
+    cond2=np.logical_and(~cond0, abs(b - c) < er)
     if np.sum(cond2)!=0:
         L1 = a[cond2]
         L2 = b[cond2]
@@ -457,7 +457,7 @@ def _G2m(a,b,c):
     er = np.finfo(a[0]).eps * 1e3  # Error defined three order of magnitude of 
                                    # system's epslon
     # Initialize G1
-    G2 = np.empty(a.shape)
+    G2 = np.zeros(a.shape)
 
     # NaN for non plausible diffusion values, i.e. a <= 0 or b <= 0 or c <= 0
     abc = np.array((a, b, c))    
@@ -475,8 +475,7 @@ def _G2m(a,b,c):
             (L1+L2+L3)**2 / (3 * (L2-L3)**2) * ((L2+L3) / np.sqrt(L2*L3) - 2)
 
     # Resolve possible sigularity b==c
-    cond2=np.logical_and(~cond0, np.logical_and(abs(b - c) < er,
-                                                abs(a - b) > er))
+    cond2=np.logical_and(~cond0, abs(b - c) < er)
     if np.sum(cond2)!=0:
         L1 = a[cond2]
         L2 = b[cond2]
@@ -707,13 +706,14 @@ def axial_kurtosis(dki_params):
     MD = mean_diffusivity(evals)
 
     # Initialize AK
-    AK = np.zeros(kt.shape[-1])
+    AK = np.zeros(kt.shape[:-1])
 
     # loop over all voxels
     for vox in range(len(kt)):
         R = evecs[vox]
         dt = lower_triangular(np.dot(np.dot(R, np.diag(evals[vox])), R.T))
-        AK[vox] = _directional_kurtosis(dt, MD[vox], kt[vox], R[:, 1])
+        AK[vox] = _directional_kurtosis(dt, MD[vox], kt[vox],
+                                        np.array([R[:, 1]]))
 
     AK = AK.reshape(outshape)
 
@@ -1157,7 +1157,7 @@ class DiffusionKurtosisFit(TensorFit):
         return mean_kurtosis(self.model_params, sphere)
 
     @auto_attr
-    def ak(self, evals, Wrotat, axis=-1):
+    def ak(self):
         r"""
         Axial Kurtosis (AK) of a diffusion kurtosis tensor. 
 
@@ -1170,19 +1170,8 @@ class DiffusionKurtosisFit(TensorFit):
         return axial_kurtosis(self.model_params)
 
     @auto_attr
-    def rk(self, evals, Wrotat, axis=-1):
-        r"""
-        (WIP)
-        Radial Kurtosis (RK) of a diffusion kurtosis tensor. 
-
-        Parameters
-        ----------
-        evals : array-like
-            Eigenvalues of a diffusion tensor.
-        Wrotat : array-like
-            W tensor elements of interest for the evaluation of the Kurtosis (W_xxxx,W_yyyy,W_zzzz,W_xxyy,W_xxzz,W_yyzz)
-        axis : int
-            Axis of `evals` which contains 3 eigenvalues.
+    def rk(self):
+        r""" Radial Kurtosis (RK) of a diffusion kurtosis tensor. 
 
         Returns
         -------
@@ -1195,18 +1184,30 @@ class DiffusionKurtosisFit(TensorFit):
 
         .. math::
 
-        K_{r}=G_1(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2222}+G_1(\lambda_1,\lambda_3,\lambda_2)\hat{W}_{333}+G_2(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2233}
+            K_{\bot} = G_1(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2222} +
+                       G_1(\lambda_1,\lambda_3,\lambda_2)\hat{W}_{3333} +
+                       G_2(\lambda_1,\lambda_2,\lambda_3)\hat{W}_{2233}
 
         where:
-        \begin{equation}
-        G_1(\lambda_1,\lambda_2,\lambda_3)=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{18\lambda_2(\lambda_2-\lambda_3)}[2\lambda_2+\frac{\lambda_3^2-3\lambda_2 \lambda_3}{\sqrt{\lambda_2\lambda_3}}]
-        \end{equation}
 
-        \begin{equation}
-        G_2(\lambda_1,\lambda_2,\lambda_3)=\frac{(\lambda_1+\lambda_2+\lambda_3)^2}{(\lambda_2-\lambda_3)^2}[\frac{\lambda_2+\lambda_3}{\sqrt{\lambda_2\lambda_3}}-2]
-        \end{equation}
+        .. math::
 
+            G_1(\lambda_1,\lambda_2,\lambda_3)=
+            \frac{(\lambda_1+\lambda_2+\lambda_3)^2}{18\lambda_2(\lambda_2-
+            \lambda_3)} \left (2\lambda_2 +
+            \frac{\lambda_3^2-3\lambda_2\lambda_3}{\sqrt{\lambda_2\lambda_3}}
+            \right)
+  
+        and
+
+        .. math::
+
+            G_2(\lambda_1,\lambda_2,\lambda_3)=
+            \frac{(\lambda_1+\lambda_2+\lambda_3)^2}{(\lambda_2-\lambda_3)^2}
+            \left ( \frac{\lambda_2+\lambda_3}{\sqrt{\lambda_2\lambda_3}}-2
+            \right )
         """
+        return radial_kurtosis(self.model_params)
 
     def akc(self, sphere):
         r""" Calculate the apparent kurtosis coefficient (AKC) in each
