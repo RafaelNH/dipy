@@ -26,7 +26,8 @@ from ..core.sphere import Sphere
 from .vec_val_sum import vec_val_vect
 from ..core.onetime import auto_attr
 from .base import ReconstModel
-
+from .recspeed import local_maxima
+from dipy.core.geometry import (sphere2cart, cart2sphere)
 
 def apparent_kurtosis_coef(dki_params, sphere, min_diffusivity=0,
                            min_kurtosis=-1):
@@ -173,6 +174,61 @@ def _directional_kurtosis(dt, MD, kt, V, min_diffusivity=0, min_kurtosis=-1):
         AKC = AKC.clip(min=min_kurtosis)
 
     return (MD/ADC) ** 2 * AKC
+
+
+def kurtosis_maxima(dt, MD, kt, sphere, gtol=1e-5):
+    """ Computes the maxima value of a single voxel kurtosis tensor
+
+    Parameters
+    ----------
+    dt : array (6,)
+        elements of the diffusion tensor of the voxel.
+    MD : float
+        mean diffusivity of the voxel
+    kt : array (15,)
+        elements of the kurtosis tensor of the voxel.
+    sphere : Sphere class instance, optional
+        The sphere providing sample directions for the initial search of the
+        maxima value of kurtosis.
+    gtol : float, optional
+        This input is to refine kurtosis maxima under the precision of the
+        directions sampled on the sphere class instance. The gradient of the
+        convergence procedure must be less than gtol before succesful
+        termination. If gtol is None, fiber direction is directly taken from 
+        the initial sampled directions of the given sphere object
+    
+    Returns
+    --------
+    max_value : float
+        kurtosis tensor maxima value
+    max_dir : array (3,)
+        Cartesian coordinates of the direction of the maxima kurtosis value 
+    """
+    # first estimation
+    AKC = _directional_kurtosis(dt, MD, kt, sphere.vertices)
+    max_val, ind = local_maxima(AKC, sphere.edges)
+    n = len(max_val)
+    max_dir = sphere.vertices[ind]
+
+    # refine maxima direction
+    if gtol is not None:
+        for p in range(n):
+            r, theta, phi = cart2sphere(max_dir[p, 0], max_dir[p, 1],
+                                        max_dir[p, 2])
+            ang = np.array([theta, phi])
+            #convergence
+            #ang[:] = opt.fmin_bfgs(_kt_maxima_converge, ang,
+            #                       args=('...............'),
+            #                       gtol=gtol, disp=False, retall=False)
+            
+            # use angle to compute maxima
+            # see if maxima is bigger than previous maxima
+            # if it is, update max_value and max direction 
+    else:
+        max_value = max(max_val)
+        max_direction = max_dir(max_val.index(max_value))
+        
+    return max_value, max_direction
 
 
 def dki_prediction(dki_params, gtab, S0=150):
