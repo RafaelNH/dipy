@@ -176,6 +176,38 @@ def _directional_kurtosis(dt, MD, kt, V, min_diffusivity=0, min_kurtosis=-1):
     return (MD/ADC) ** 2 * AKC
 
 
+def _kt_maxima_converge(ang, dt, MD, kt):
+    """ Helper function that computes the negate of the directional kurtosis
+    of a voxel along a given directions in polar coordinates.
+
+    Parameters
+    ----------
+    ang : array (2,)
+        arrays containing the two polar angles
+    dt : array (6,)
+        elements of the diffusion tensor of the voxel.
+    MD : float
+        mean diffusivity of the voxel
+    kt : array (15,)
+        elements of the kurtosis tensor of the voxel.
+
+    Returns
+    -------
+    neg_kt : float
+        The negated values of the directional kurtosis for the given direction.
+
+    Notes
+    -----
+    This function is used to refine the kurtosis maxima estimate
+    
+    See also
+    --------
+    dipy.reconst.dki.kurtosis_maxima
+    """
+    n = np.array(sphere2cart(1, ang[0], ang[1]))
+    return - _directional_kurtosis(dt, MD, kt, n)
+
+
 def kurtosis_maxima(dt, MD, kt, sphere, gtol=1e-5):
     """ Computes the maxima value of a single voxel kurtosis tensor
 
@@ -204,11 +236,15 @@ def kurtosis_maxima(dt, MD, kt, sphere, gtol=1e-5):
     max_dir : array (3,)
         Cartesian coordinates of the direction of the maxima kurtosis value 
     """
-    # first estimation
+    # Estimation of maxima kurtosis candidates
     AKC = _directional_kurtosis(dt, MD, kt, sphere.vertices)
     max_val, ind = local_maxima(AKC, sphere.edges)
     n = len(max_val)
     max_dir = sphere.vertices[ind]
+
+    # Select the maxima from the candidates
+    max_value = max(max_val)
+    max_direction = max_dir(max_val.index(max_value))
 
     # refine maxima direction
     if gtol is not None:
@@ -216,18 +252,14 @@ def kurtosis_maxima(dt, MD, kt, sphere, gtol=1e-5):
             r, theta, phi = cart2sphere(max_dir[p, 0], max_dir[p, 1],
                                         max_dir[p, 2])
             ang = np.array([theta, phi])
-            #convergence
-            #ang[:] = opt.fmin_bfgs(_kt_maxima_converge, ang,
-            #                       args=('...............'),
-            #                       gtol=gtol, disp=False, retall=False)
-            
-            # use angle to compute maxima
-            # see if maxima is bigger than previous maxima
-            # if it is, update max_value and max direction 
-    else:
-        max_value = max(max_val)
-        max_direction = max_dir(max_val.index(max_value))
-        
+            ang[:] = opt.fmin_bfgs(_kt_maxima_converge, ang, args=(dt, MD, kt),
+                                   gtol=gtol, disp=False, retall=False)
+            k_dir = sphere2cart(1., ang[0], ang[1])
+            k_val = _directional_kurtosis(dt, MD, kt, n)
+            if k_dir > max_value:
+                max_value = k_val
+                max_direction = k_dir
+
     return max_value, max_direction
 
 
